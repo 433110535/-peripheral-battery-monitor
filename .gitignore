@@ -1,0 +1,28 @@
+# --- Python ---------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# --- Virtual environment ---------------------------------------------------
+# The venv normally lives one level above this folder (in "电量\.venv").
+# If you ever put it inside the repo, these keep it out.
+.venv/
+venv/
+env/
+
+# --- PyInstaller -----------------------------------------------------------
+build/
+dist/
+
+# --- Runtime data ----------------------------------------------------------
+# Not actually produced here (config and logs go to
+# %LOCALAPPDATA%\PeripheralBattery\), but harmless insurance.
+*.log
+config.json
+
+# --- Editors / OS ----------------------------------------------------------
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

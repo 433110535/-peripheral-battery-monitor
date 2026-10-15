@@ -1,0 +1,19 @@
+# Peripheral Battery Monitor - runtime dependencies
+#
+# Install:
+#   python -m venv .venv
+#   .venv\Scripts\python -m pip install -r requirements.txt
+#
+# If PyPI is slow, use a mirror, e.g. Tsinghua:
+#   .venv\Scripts\python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
+#
+# NOTE on PySide6: this app only needs QtCore/QtGui/QtWidgets, so the lean
+# "PySide6-Essentials" wheel is enough (it still provides the `PySide6` import).
+# Swap it for the full "PySide6" meta-package if you want WebEngine/Addons too.
+
+PySide6-Essentials>=6.7
+hidapi>=0.14
+watchdog>=4.0
+
+# Optional: single-file packaging
+# pyinstaller>=6.6
