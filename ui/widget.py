@@ -11,6 +11,11 @@ It is a bare QWidget: no title bar, no taskbar button, draggable from anywhere,
 snaps to the screen edges when dropped near one, and remembers where it was put
 (``config.json`` -> ``ui.widget_x`` / ``ui.widget_y``).
 
+It also gets out of the way: while a game or a fullscreen video owns the
+screen, the card hides itself and comes back once that window is gone (see
+``ui/foreground.py``). ``ui.widget_visibility`` chooses between ``always``,
+``hide_fullscreen`` (the default) and ``desktop_only``.
+
 The glass surface is painted here rather than handed to the OS. Windows' own
 acrylic material (``SetWindowCompositionAttribute``) was measured on this
 machine and rejected: it renders a flat, near-white surface whose lightness
@@ -21,10 +26,14 @@ veil is predictable on every wallpaper and costs nothing.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QPoint, QRect, QRectF, Qt, Signal, Slot
-from PySide6.QtGui import (QColor, QFont, QFontMetrics, QGuiApplication,
-                           QLinearGradient, QPainter, QPainterPath, QPen)
+from PySide6.QtCore import QPoint, QRect, QRectF, Qt, QTimer, Signal, Slot
+from PySide6.QtGui import (QActionGroup, QColor, QFont, QFontMetrics,
+                           QGuiApplication, QLinearGradient, QPainter,
+                           QPainterPath, QPen)
 from PySide6.QtWidgets import QMenu, QWidget
+
+from ui.foreground import (desktop_is_foreground, foreground_is_maximized,
+                           fullscreen_app_is_foreground)
 
 # --- geometry (logical pixels) ----------------------------------------------
 _CARD_W = 236         # the visible glass card
@@ -60,6 +69,16 @@ _COL_SHADOW = (15, 23, 42)                # shadow colour, painted at low alpha
 _VEIL_TOP = 214       # 0-255 white
 _VEIL_BOTTOM = 168
 
+# --- when the card is allowed on screen -------------------------------------
+_VISIBILITY_MODES = ("always", "hide_fullscreen", "hide_maximized", "desktop_only")
+_VISIBILITY_LABELS = (
+    ("always", "始终显示"),
+    ("hide_fullscreen", "全屏时隐藏"),
+    ("hide_maximized", "最大化或全屏时隐藏"),
+    ("desktop_only", "仅在桌面显示"),
+)
+_VISIBILITY_INTERVAL_MS = 700
+
 
 class DesktopWidget(QWidget):
     """The small always-on-top battery card."""
@@ -69,6 +88,7 @@ class DesktopWidget(QWidget):
     hide_requested = Signal()
     quit_requested = Signal()
     always_on_top_changed = Signal(bool)
+    visibility_mode_changed = Signal(str)
     position_changed = Signal(int, int)
 
     def __init__(self, config, parent: QWidget | None = None) -> None:
@@ -76,10 +96,19 @@ class DesktopWidget(QWidget):
         self.config = config
         self._threshold = config.ui.low_battery_threshold
         self._always_on_top = bool(getattr(config.ui, "widget_always_on_top", True))
+        mode = getattr(config.ui, "widget_visibility", "hide_fullscreen")
+        self._visibility_mode = mode if mode in _VISIBILITY_MODES else "hide_fullscreen"
 
         self._latest: dict[str, object] = {}
         self._order: list[str] = []
         self._drag_offset: QPoint | None = None
+        self._user_visible = False
+
+        # Hiding while a game or a video owns the screen means the card has to
+        # come back by itself, so this timer runs whenever the user wants it up.
+        self._visibility_timer = QTimer(self)
+        self._visibility_timer.setInterval(_VISIBILITY_INTERVAL_MS)
+        self._visibility_timer.timeout.connect(self._on_visibility_tick)
 
         self._name_font = QFont()
         self._name_font.setPixelSize(13)
@@ -167,6 +196,43 @@ class DesktopWidget(QWidget):
         self.show()
         self.raise_()
 
+    # --- when to be on screen ------------------------------------------------
+    def set_user_visible(self, visible: bool) -> None:
+        """The user's own choice; fullscreen hiding is layered on top of it."""
+        self._user_visible = bool(visible)
+        if visible:
+            self._visibility_timer.start()
+            self._on_visibility_tick()
+        else:
+            self._visibility_timer.stop()
+            self.hide()
+
+    def _should_hide_now(self) -> bool:
+        if self._visibility_mode == "always":
+            return False
+        if self._visibility_mode == "desktop_only":
+            return not desktop_is_foreground()
+        if self._visibility_mode == "hide_maximized":
+            return foreground_is_maximized() or fullscreen_app_is_foreground()
+        return fullscreen_app_is_foreground()
+
+    def _on_visibility_tick(self) -> None:
+        if not self._user_visible:
+            return
+        hide_now = self._should_hide_now()
+        if hide_now and self.isVisible():
+            self.hide()
+        elif not hide_now and not self.isVisible():
+            self.show_at_saved_position()
+
+    def set_visibility_mode(self, mode: str) -> None:
+        if mode not in _VISIBILITY_MODES or mode == self._visibility_mode:
+            return
+        self._visibility_mode = mode
+        self._on_visibility_tick()
+        self.visibility_mode_changed.emit(mode)
+
+    # --- snapping ------------------------------------------------------------
     def _snap_to_edges(self) -> None:
         screen = self.screen() or QGuiApplication.primaryScreen()
         if screen is None:
@@ -228,6 +294,17 @@ class DesktopWidget(QWidget):
         menu = QMenu(self)
         menu.addAction("打开主窗口", self.open_window_requested.emit)
         menu.addAction("立即刷新", self.refresh_requested.emit)
+        menu.addSeparator()
+        timing = menu.addMenu("何时显示")
+        group = QActionGroup(timing)
+        group.setExclusive(True)
+        for value, label in _VISIBILITY_LABELS:
+            action = timing.addAction(label)
+            action.setCheckable(True)
+            action.setChecked(value == self._visibility_mode)
+            action.setActionGroup(group)
+            action.triggered.connect(
+                lambda _checked=False, chosen=value: self.set_visibility_mode(chosen))
         menu.addSeparator()
         top = menu.addAction("始终置顶")
         top.setCheckable(True)

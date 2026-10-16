@@ -78,10 +78,7 @@ def main(argv: list[str] | None = None) -> int:
 
     def set_widget_visible(visible: bool) -> None:
         """Show/hide the desktop widget and remember the choice."""
-        if visible:
-            widget.show_at_saved_position()
-        else:
-            widget.hide()
+        widget.set_user_visible(visible)
         cfg.ui.widget_enabled = bool(visible)
         config.save(cfg)
         tray.set_widget_checked(visible)
@@ -94,12 +91,18 @@ def main(argv: list[str] | None = None) -> int:
         cfg.ui.widget_always_on_top = bool(on)
         config.save(cfg)
 
+    def on_visibility_mode(mode: str) -> None:
+        cfg.ui.widget_visibility = mode
+        config.save(cfg)
+        log.info("desktop widget visibility mode -> %s", mode)
+
     widget.open_window_requested.connect(show_main_window)
     widget.refresh_requested.connect(manager.poll_now)
     widget.quit_requested.connect(app.quit)
     widget.hide_requested.connect(lambda: set_widget_visible(False))
     widget.position_changed.connect(on_widget_moved)
     widget.always_on_top_changed.connect(on_always_on_top)
+    widget.visibility_mode_changed.connect(on_visibility_mode)
     tray.toggle_widget.connect(set_widget_visible)
 
     def on_quit() -> None:
@@ -114,7 +117,7 @@ def main(argv: list[str] | None = None) -> int:
     show_main = not cfg.ui.start_minimized and not force_widget
 
     if widget_on:
-        widget.show_at_saved_position()
+        widget.set_user_visible(True)
     tray.set_widget_checked(widget_on)
 
     if show_main:
@@ -125,7 +128,8 @@ def main(argv: list[str] | None = None) -> int:
                          QSystemTrayIcon.Information, 3000)
 
     manager.start()
-    log.info("started (main_window=%s desktop_widget=%s)", show_main, widget_on)
+    log.info("started (main_window=%s desktop_widget=%s visibility=%s)",
+             show_main, widget_on, cfg.ui.widget_visibility)
     return app.exec()
 
 

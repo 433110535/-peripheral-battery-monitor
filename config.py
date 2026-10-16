@@ -81,6 +81,7 @@ class UIConfig:
     # --- desktop widget ---------------------------------------------------
     widget_enabled: bool = True          # park the mini card on the desktop
     widget_always_on_top: bool = True
+    widget_visibility: str = "hide_fullscreen"   # always | hide_fullscreen | desktop_only
     widget_x: int | None = None          # None => bottom-right of the screen
     widget_y: int | None = None
 
