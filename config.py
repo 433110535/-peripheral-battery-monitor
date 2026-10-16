@@ -78,6 +78,11 @@ class UIConfig:
     low_battery_threshold: int = 20
     start_minimized: bool = False
     close_to_tray: bool = True
+    # --- desktop widget ---------------------------------------------------
+    widget_enabled: bool = True          # park the mini card on the desktop
+    widget_always_on_top: bool = True
+    widget_x: int | None = None          # None => bottom-right of the screen
+    widget_y: int | None = None
 
 
 @dataclass
@@ -109,7 +114,9 @@ def load() -> Config:
     cfg = Config()
     if os.path.exists(CONFIG_FILE):
         try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as fh:
+            # utf-8-sig: Notepad and PowerShell both like to prepend a BOM, and
+            # plain utf-8 would then refuse to parse the file at all.
+            with open(CONFIG_FILE, "r", encoding="utf-8-sig") as fh:
                 data = json.load(fh)
             _apply(cfg.razer, data.get("razer", {}))
             _apply(cfg.hyperx, data.get("hyperx", {}))
@@ -120,19 +127,40 @@ def load() -> Config:
     return cfg
 
 
-def save_default() -> None:
-    """Write a commented-ish default config.json (only if missing)."""
-    if os.path.exists(CONFIG_FILE):
-        return
-    os.makedirs(APP_DIR, exist_ok=True)
-    cfg = Config()
-    data = {
+def _as_dict(cfg: Config) -> dict:
+    return {
         "razer": cfg.razer.__dict__,
         "hyperx": cfg.hyperx.__dict__,
         "ui": cfg.ui.__dict__,
     }
+
+
+def save(cfg: Config) -> bool:
+    """Write the whole config back.
+
+    Used at runtime for things the UI changes itself -- the desktop widget's
+    position and toggles. Written to a temporary file first, because a
+    half-written config.json would be read as a broken one next start.
+    """
+    os.makedirs(APP_DIR, exist_ok=True)
+    tmp = CONFIG_FILE + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(_as_dict(cfg), fh, indent=2, ensure_ascii=False)
+        os.replace(tmp, CONFIG_FILE)
+        return True
+    except Exception:  # noqa: BLE001 - a failed save must never kill the app
+        logging.getLogger(__name__).exception("could not write %s", CONFIG_FILE)
+        return False
+
+
+def save_default() -> None:
+    """Write a default config.json (only if missing)."""
+    if os.path.exists(CONFIG_FILE):
+        return
+    os.makedirs(APP_DIR, exist_ok=True)
     with open(CONFIG_FILE, "w", encoding="utf-8") as fh:
-        json.dump(data, fh, indent=2, ensure_ascii=False)
+        json.dump(_as_dict(Config()), fh, indent=2, ensure_ascii=False)
 
 
 # --- Logging ----------------------------------------------------------------

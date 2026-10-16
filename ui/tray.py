@@ -88,6 +88,7 @@ def make_battery_icon(percent: int | None, charging: bool | None,
 
 class Tray(QSystemTrayIcon):
     toggle_window = Signal()
+    toggle_widget = Signal(bool)
     refresh_requested = Signal()
     quit_requested = Signal()
 
@@ -103,6 +104,11 @@ class Tray(QSystemTrayIcon):
         # rebuilding the device list) does not delete them.
         self._toggle_action = QAction("显示/隐藏主窗口", self)
         self._toggle_action.triggered.connect(self.toggle_window.emit)
+        self._widget_action = QAction("桌面小插件", self)
+        self._widget_action.setCheckable(True)
+        self._widget_action.setChecked(
+            bool(getattr(config.ui, "widget_enabled", True)))
+        self._widget_action.toggled.connect(self.toggle_widget.emit)
         self._refresh_action = QAction("立即刷新", self)
         self._refresh_action.triggered.connect(self.refresh_requested.emit)
         self._quit_action = QAction("退出", self)
@@ -128,6 +134,12 @@ class Tray(QSystemTrayIcon):
         self._update_icon()
         self._update_tooltip()
 
+    def set_widget_checked(self, checked: bool) -> None:
+        """Mirror the widget's real state, without echoing a toggle back."""
+        self._widget_action.blockSignals(True)
+        self._widget_action.setChecked(bool(checked))
+        self._widget_action.blockSignals(False)
+
     def _rebuild_menu(self) -> None:
         """Rebuild the whole menu: device lines on top, commands below."""
         self._menu.clear()
@@ -140,6 +152,7 @@ class Tray(QSystemTrayIcon):
         if self._latest:
             self._menu.addSeparator()
         self._menu.addAction(self._toggle_action)
+        self._menu.addAction(self._widget_action)
         self._menu.addAction(self._refresh_action)
         self._menu.addSeparator()
         self._menu.addAction(self._quit_action)

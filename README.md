@@ -7,9 +7,14 @@
 | 雷蛇鼠标（Razer Viper V3 Pro，Synapse 4） | 读取 Razer Synapse 的日志文件 |
 | HyperX Cloud III Wireless（飓风3）耳机 | 直接通过 USB HID 与接收器通信 |
 
-界面用 PySide6，常驻系统托盘；**不逆向雷蛇 USB 协议**，HyperX **不经过 NGENUITY**。
+界面用 PySide6，常驻系统托盘，另有一个可长时间停在桌面上的**磨砂玻璃小插件**；
+**不逆向雷蛇 USB 协议**，HyperX **不经过 NGENUITY**。
 
 ![界面截图](assets/screenshot.png)
+
+桌面小插件（始终置顶、可拖动、贴边吸附）：
+
+![桌面小插件](assets/widget.png)
 
 ---
 
@@ -17,7 +22,7 @@
 
 ```
 .
-├── main.py                  # 程序入口（窗口 + 托盘）
+├── main.py                  # 程序入口（主窗口 + 桌面小插件 + 托盘）
 ├── config.py                # 路径、日志、所有可调常量
 ├── models.py                # 统一数据模型 DeviceStatus
 ├── adapters/
@@ -27,6 +32,7 @@
 │   └── manager.py           # DeviceManager：每个适配器一条线程
 ├── ui/
 │   ├── main_window.py       # 主窗口（紧凑竖排）
+│   ├── widget.py            # 桌面小插件（无边框 / 置顶 / 拖动吸附）
 │   └── tray.py              # 系统托盘（图标 / 菜单 / tooltip）
 ├── tools/
 │   ├── hyperx_probe.py      # HID 探测/校准脚本
@@ -35,7 +41,8 @@
 ├── assets/
 │   ├── app.ico              # 应用图标（exe / 托盘）
 │   ├── app.png              # 同上的 PNG 版（备用）
-│   └── screenshot.png       # 界面截图（README 用）
+│   ├── widget.png           # 桌面小插件截图（README 用）
+│   └── screenshot.png       # 主界面截图（README 用）
 ├── PeripheralBattery.spec   # PyInstaller 打包配置
 ├── requirements.txt
 ├── .gitignore
@@ -55,11 +62,14 @@ cd <仓库名>
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 
-# 正常启动（显示窗口 + 托盘）
+# 正常启动（主窗口 + 桌面小插件 + 托盘）
 .\.venv\Scripts\python.exe main.py
 
-# 只挂在托盘，启动时不弹窗
+# 开机自启用：不弹主窗口，只在桌面上停着小插件（+ 托盘）
 .\.venv\Scripts\python.exe main.py --tray
+
+# 只想用小插件、永远不弹主窗口
+.\.venv\Scripts\python.exe main.py --widget
 
 # 打开调试日志
 .\.venv\Scripts\python.exe main.py --debug
@@ -72,6 +82,48 @@ python -m venv .venv
 
 程序自身日志写到：`%LOCALAPPDATA%\PeripheralBattery\app.log`
 配置文件：`%LOCALAPPDATA%\PeripheralBattery\config.json`（首次运行自动生成）。
+
+---
+
+## 桌面小插件
+
+一个常驻桌面的迷你卡片，扫一眼就知道两台设备还剩多少电：
+
+- **无边框、不占任务栏**，默认停在屏幕右下角（离可用区域边缘 16 px）。
+- **拖动**：左键按住任意位置就能拖；拖到屏幕边缘附近松手会**自动吸附**，同样留 16 px 边距。
+- **记住位置**：松手即写入 `config.json` 的 `ui.widget_x` / `ui.widget_y`。
+  换显示器或改分辨率后如果落在屏幕外，启动时会自动拉回可见区域。
+- **始终置顶**（右键菜单里可以关掉）。
+- **双击** → 打开主窗口；**右键** → 菜单（打开主窗口 / 立即刷新 / 始终置顶 / 隐藏小插件 / 退出）。
+
+颜色规则和主窗口一致：绿色正常、**红色低于 20%**、蓝色充电中、灰色读不到。
+设备名过长会自动省略，完整名字看悬停提示。
+设备多于两台时卡片会自动加高。
+
+托盘右键菜单里的 **"桌面小插件"** 是勾选项，随时开关，开关状态会记进配置。
+
+相关配置项：
+
+```json
+{
+  "ui": {
+    "widget_enabled": true,        // 启动时是否显示小插件
+    "widget_always_on_top": true,
+    "widget_x": null,              // null = 默认右下角；拖动后自动写入
+    "widget_y": null
+  }
+}
+```
+
+### 磨砂玻璃是怎么做的
+
+卡片表面是**程序自己画的**：半透明白色的竖向渐变 + 1 px 高光描边 + 一层柔和投影，
+外面留 8 px 透明边距给投影，所以窗口本身仍是异形/半透明窗口。
+
+没有使用 Windows 的亚克力接口（`SetWindowCompositionAttribute`）。实测过它：
+给出的是由**壁纸亮度**决定的、几乎不透明的白灰色，透不出卡片后面的内容，
+深色壁纸下还会把深色文字压糊，并且拖动时明显掉帧。自己画的一层在任何壁纸、
+任何 Windows 版本下表现都一致，也不吃性能。
 
 ---
 
@@ -236,7 +288,14 @@ Synapse 会把整份设备列表（含电量）持续写进纯文本日志，直
 > 会继续用同一个 `config.json`。
 
 开机自启：`Win + R` → 输入 `shell:startup` → 把 `PeripheralBattery.exe` 的
-**快捷方式**丢进去。（exe 本身支持 `--tray` 参数，启动时只挂托盘、不弹窗。）
+**快捷方式**丢进去，然后在快捷方式属性里把"目标"改成：
+
+```
+"...\PeripheralBattery.exe" --tray
+```
+
+这样开机后不弹主窗口，桌面上直接停着那个小插件（托盘图标也在）。
+想连小插件都不显示，就把 `config.json` 里的 `ui.widget_enabled` 改成 `false`。
 
 ---
 
@@ -251,6 +310,10 @@ Synapse 会把整份设备列表（含电量）持续写进纯文本日志，直
   所以 UI 永远不会被设备读取卡住。
 - **配置驱动**：所有字节偏移、命令字、轮询间隔都在 `config.py` 定义，可被
   `config.json` 覆盖。
+- **桌面小插件零额外开销**：它和主窗口、托盘共用同一个 `StatusBridge` 信号，
+  自己没有线程，也不额外读设备。
+- **窗口置顶用的是 Qt 原生标志**（`WindowStaysOnTopHint`），不是轮询抢焦点；
+  拖动时直接 `move()`，不重绘整块桌面。
 
 ---
 
